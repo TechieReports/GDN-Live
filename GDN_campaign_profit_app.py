@@ -29,15 +29,16 @@ except Exception as e:
     st.stop()
 
 # ---------------------------
-# CUSTOMER IDS TO QUERY
+# FETCH ALL ACCESSIBLE CUSTOMERS
 # ---------------------------
-customer_ids = [
-    "9126180247",  # AppD - 2 KS
-    "6099598182",  # AppD - 1 LegitLevel
-    "8583652603",  # AppD - 6 Knowledgesharer
-    "9195646607",  # AppD - 7 Knowledgesharer
-    "6597133033",  # AppD - 8 LegitLevel
-]
+try:
+    customer_service = client.get_service("CustomerService")
+    accessible_customers = customer_service.list_accessible_customers()
+    customer_ids = [res.split("/")[-1] for res in accessible_customers.resource_names]
+    st.info(f"Found {len(customer_ids)} accessible accounts.")
+except Exception as e:
+    st.error(f"❌ Failed to list accounts: {e}")
+    st.stop()
 
 # ---------------------------
 # QUERY FOR LAST 7 DAYS SPEND
