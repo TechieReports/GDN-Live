@@ -1,85 +1,61 @@
 import streamlit as st
 import pandas as pd
-from google.ads.googleads.client import GoogleAdsClient
-from google.ads.googleads.errors import GoogleAdsException
+import re
 
-# ---------------------------
-# STREAMLIT SETUP
-# ---------------------------
-st.set_page_config(page_title="Google Ads MCC Spend", layout="centered")
-st.title("📊 Google Ads Manager - Account Spend Overview")
+# Streamlit settings
+st.set_page_config(page_title="Campaign Revenue vs Spend Analyzer", layout="centered")
+st.title("📊 Campaign Revenue vs Spend Analyzer 💰 (Live from Google Sheets)")
 
-# ---------------------------
-# GOOGLE ADS CLIENT CONFIG
-# ---------------------------
-config = {
-    "developer_token": st.secrets["GOOGLE_ADS_DEVELOPER_TOKEN"],
-    "client_id": st.secrets["GOOGLE_ADS_CLIENT_ID"],
-    "client_secret": st.secrets["GOOGLE_ADS_CLIENT_SECRET"],
-    "refresh_token": st.secrets["GOOGLE_ADS_REFRESH_TOKEN"],
-    "login_customer_id": "5003253105",  # 👈 Your MCC ID
-    "use_proto_plus": True
-}
+# ✅ LIVE Revenue Sheet URL (Google Sheets CSV export)
+REVENUE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRnfJUyX9TOWkRHgJivH4U6-o83t9nM9hRkC2zbH_p0tsl3D2kH0ak54iZBNcDO60Ygbp7CRMP7hLzX/pub?gid=0&single=true&output=csv"
 
-try:
-    client = GoogleAdsClient.load_from_dict(config)
-    st.success("✅ Connected to Google Ads API")
-except Exception as e:
-    st.error(f"❌ Failed to connect to Google Ads API: {e}")
-    st.stop()
+# Upload spend Excel file
+spend_file = st.file_uploader("Upload Spend Excel File", type=["xlsx"])
 
-# ---------------------------
-# FETCH ALL ACCESSIBLE CUSTOMERS
-# ---------------------------
-try:
-    customer_service = client.get_service("CustomerService")
-    accessible_customers = customer_service.list_accessible_customers()
-    customer_ids = [res.split("/")[-1] for res in accessible_customers.resource_names]
-    st.info(f"Found {len(customer_ids)} accessible accounts.")
-except Exception as e:
-    st.error(f"❌ Failed to list accounts: {e}")
-    st.stop()
-
-# ---------------------------
-# QUERY FOR LAST 7 DAYS SPEND
-# ---------------------------
-query = """
-    SELECT
-      customer.id,
-      customer.descriptive_name,
-      metrics.cost_micros
-    FROM customer
-    WHERE segments.date DURING LAST_7_DAYS
-"""
-
-spend_data = []
-
-for cid in customer_ids:
+if spend_file:
     try:
-        ga_service = client.get_service("GoogleAdsService")
-        response = ga_service.search(customer_id=cid, query=query)
+        # ✅ Load live revenue data from Google Sheets
+        revenue_df = pd.read_csv(REVENUE_SHEET_URL)
+        revenue_agg = revenue_df.groupby("campid")["estimated_revenue"].sum().reset_index()
+        revenue_agg.rename(columns={"estimated_revenue": "Revenue"}, inplace=True)
+        revenue_agg["CampID"] = revenue_agg["campid"].astype(int)
+        revenue_agg.drop(columns=["campid"], inplace=True)
 
-        for row in response:
-            spend_data.append({
-                "Customer ID": row.customer.id,
-                "Account Name": row.customer.descriptive_name,
-                "Spend (USD)": round(row.metrics.cost_micros / 1_000_000, 2)
-            })
+        # ✅ Load spend Excel file (headers start on row 3, i.e., index 2)
+        spend_df = pd.read_excel(spend_file, header=2)
 
-    except GoogleAdsException as e:
-        st.warning(f"⚠️ Error accessing {cid}: {e.error.code().name}")
+        # Ensure required columns exist
+        if "Campaign" not in spend_df.columns or "Cost" not in spend_df.columns:
+            st.error("❌ 'Campaign' or 'Cost' column not found in the uploaded Excel file.")
+            st.dataframe(spend_df.head(10))
+        else:
+            # Extract campaign info
+            spend_df["Campaign Name"] = spend_df["Campaign"]
+            spend_df["CampID"] = spend_df["Campaign Name"].astype(str).str.extract(r"\((\d+)\)")
+            spend_df = spend_df[spend_df["CampID"].notnull()]  # Drop rows without ID
+            spend_df["CampID"] = spend_df["CampID"].astype(int)
 
-# ---------------------------
-# DISPLAY RESULTS
-# ---------------------------
-if spend_data:
-    df = pd.DataFrame(spend_data)
-    df = df.sort_values(by="Spend (USD)", ascending=False)
+            # Clean cost
+            spend_df["Spend"] = pd.to_numeric(spend_df["Cost"], errors="coerce")
 
-    st.subheader("💰 Last 7 Days Spend by Account")
-    st.dataframe(df, use_container_width=True)
+            # Prepare spend data
+            spend_clean = spend_df[["CampID", "Campaign Name", "Spend"]]
 
-    csv = df.to_csv(index=False).encode("utf-8")
-    st.download_button("📥 Download CSV", csv, "account_spend.csv", "text/csv")
-else:
-    st.info("No spend data retrieved from selected accounts.")
+            # Merge with live revenue
+            merged = pd.merge(spend_clean, revenue_agg, on="CampID", how="left")
+            merged["Revenue"] = merged["Revenue"].fillna(0)
+            merged["Profit/Loss"] = merged["Revenue"] - merged["Spend"]
+
+            # Reorder columns
+            final_df = merged[["CampID", "Campaign Name", "Spend", "Revenue", "Profit/Loss"]]
+
+            # Show results
+            st.subheader("📈 Profit / Loss Report")
+            st.dataframe(final_df, use_container_width=True)
+
+            # Download as CSV
+            csv = final_df.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Download CSV", csv, "campaign_profit_loss.csv", "text/csv")
+
+    except Exception as e:
+        st.error(f"🚨 Error: {e}")
