@@ -7,7 +7,7 @@ st.set_page_config(page_title="Campaign Revenue vs Spend Analyzer", layout="cent
 st.title("📊 Campaign Revenue vs Spend Analyzer 💰 (Live from Google Sheets)")
 
 # ✅ LIVE Revenue Sheet URL (Google Sheets CSV export)
-REVENUE_SHEET_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRnfJUyX9TOWkRHgJivH4U6-o83t9nM9hRkC2zbH_p0tsl3D2kH0ak54iZBNcDO60Ygbp7CRMP7hLzX/pub?gid=0&single=true&output=csv"
+REVENUE_SHEET_URL = "https://ocs.google.com/spreadsheets/d/e/2PACX-1vRnfJUyX9TOWkRHgJivH4U6-o83t9nM9hRkC2zbH_p0tsl3D2kH0ak54iZBNcDO60Ygbp7CRMP7hLzX/pub?gid=0&single=true&output=csv"
 
 # Upload spend Excel file
 spend_file = st.file_uploader("Upload Spend Excel File", type=["xlsx"])
